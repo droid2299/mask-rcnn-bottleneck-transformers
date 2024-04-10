@@ -17,4 +17,3 @@ python inference.py
 
 TODO:
 1. Make code more modular
-2. Add argparser
