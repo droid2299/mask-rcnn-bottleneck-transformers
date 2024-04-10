@@ -1,8 +1,19 @@
+import argparse
 import cv2
 from detectron2.engine import DefaultPredictor
 from detectron2.data import MetadataCatalog
 from detectron2.utils.visualizer import Visualizer
 from train import create_config
+
+# Create the parser
+parser = argparse.ArgumentParser(description='Inference using Mask-RCNN.')
+
+# Add the arguments
+parser.add_argument('--input_video', type=str, help='The path to the input video')
+parser.add_argument('--output_video', type=str, help='The path to the output video')
+
+# Parse the arguments
+args = parser.parse_args()
 
 cfg = create_config('coco')
 
@@ -10,13 +21,13 @@ cfg = create_config('coco')
 predictor = DefaultPredictor(cfg)
 
 # open file
-cap = cv2.VideoCapture('/content/5799414-hd_1080_1920_25fps.mp4')
+cap = cv2.VideoCapture(args.input_video)
 
 # get FPS of input video
 fps = cap.get(cv2.CAP_PROP_FPS)
 
 # define output video and its FPS
-output_file = '/content/output.mp4'
+output_file = args.output_video
 output_fps = fps
 
 # define VideoWriter object
