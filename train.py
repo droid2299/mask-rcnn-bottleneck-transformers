@@ -67,7 +67,7 @@ def get_evaluator(cfg, dataset_name, output_folder=None):
     return DatasetEvaluators(evaluator_list)
 
 
-def do_test(cfg, model):
+def do_test(cfg, model, logger):
     results = OrderedDict()
     for dataset_name in cfg.DATASETS.TEST:
         data_loader = build_detection_test_loader(cfg, dataset_name)
@@ -84,7 +84,7 @@ def do_test(cfg, model):
     return results
 
 
-def create_config(dataset_name):
+def create_config(dataset_name, output_dir):
     cfg = get_cfg()
     cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"))
     cfg.DATASETS.TRAIN = (f"{dataset_name}_train",)
@@ -111,9 +111,8 @@ def create_config(dataset_name):
     cfg.INPUT.AFFINE_TRANSFORM = True  # Apply random affine transformations
     cfg.INPUT.CUTOUT = True  # Apply cutout augmentation
     cfg.INPUT.RANDOM_ERASING = True  # Apply random erasing augmentation
-    cfg.INPUT.MIN_SIZE_TRAIN = (1024,)
 
-    cfg.OUTPUT_DIR = "/content/drive/MyDrive/EECS6322/training_results_100000_iterations/"
+    cfg.OUTPUT_DIR = output_dir
     cfg.SOLVER.CHECKPOINT_PERIOD = 5000
 
     # Replace the backbone
@@ -121,32 +120,41 @@ def create_config(dataset_name):
 
     os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
 
-    with open("/content/drive/MyDrive/EECS6322/config.yaml", "w") as f:
+    with open(f"{cfg.OUTPUT_DIR}/config.yaml", "w") as f:
         f.write(cfg.dump())
 
     return cfg
 
 
-def main():
-    PATIENCE = 5000  # Early stopping will occur after N iterations of no improvement in total_loss
-    utils.register_custom_backbone(CustomBackbone)
-    utils.register_coco_datasets('coco', "/content/coco/images/train2017", "/content/coco/annotations"
-                                                                           "/instances_train2017.json",
-                                 "/content/coco/images/val2017", "/content/coco/annotations/instances_val2017.json")
-    cfg = create_config('coco')
+def main(args):
+    # Initialize logging
+    setup_logger()
+    logger = logging.getLogger("detectron2")
 
-    resume = True
+    PATIENCE = args.patience
+
+    # Register custom backbone and datasets
+    utils.register_custom_backbone(CustomBackbone)
+    utils.register_coco_datasets(args.dataset_name, args.train_image_dir, args.train_annotation_file,
+                                 args.val_image_dir, args.val_annotation_file)
+
+    # Create configuration
+    cfg = create_config(args.dataset_name, args.output_dir)
+
+    # Build model, optimizer, and scheduler
     model = build_model(cfg)
+    logger.info(f"Model Architecture: \n {model}")
     optimizer = build_optimizer(cfg, model)
     scheduler = build_lr_scheduler(cfg, optimizer)
 
     BEST_LOSS = np.inf
 
+    # Initialize checkpointers
     checkpointer = DetectionCheckpointer(
         model, cfg.OUTPUT_DIR, optimizer=optimizer, scheduler=scheduler
     )
     start_iter = (
-            checkpointer.resume_or_load(cfg.MODEL.WEIGHTS, resume=resume).get("iteration", -1) + 1
+        checkpointer.resume_or_load(cfg.MODEL.WEIGHTS, resume=args.resume).get("iteration", -1) + 1
     )
     prev_iter = start_iter
     max_iter = cfg.SOLVER.MAX_ITER
@@ -180,15 +188,15 @@ def main():
             scheduler.step()
 
             if (
-                    cfg.TEST.EVAL_PERIOD > 0
-                    and (iteration + 1) % cfg.TEST.EVAL_PERIOD == 0
-                    and iteration != max_iter - 1
+                cfg.TEST.EVAL_PERIOD > 0
+                and (iteration + 1) % cfg.TEST.EVAL_PERIOD == 0
+                and iteration != max_iter - 1
             ):
-                do_test(cfg, model)
+                do_test(cfg, model, logger)
                 comm.synchronize()
 
             if iteration - start_iter > 5 and (
-                    (iteration + 1) % 20 == 0 or iteration == max_iter - 1
+                (iteration + 1) % 20 == 0 or iteration == max_iter - 1
             ):
                 for writer in writers:
                     writer.write()
@@ -207,10 +215,9 @@ def main():
                     logger.info("EARLY STOPPING due to no improvement in total_loss")
                     break
 
-    do_test(cfg, model)
+    do_test(cfg, model, logger)
 
 
 if __name__ == "__main__":
-    setup_logger()
-    logger = logging.getLogger("detectron2")
-    main()
+    args = utils.parse_args()
+    main(args)

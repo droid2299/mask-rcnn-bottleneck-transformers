@@ -1,21 +1,15 @@
-import argparse
+import utils
 import cv2
 from detectron2.engine import DefaultPredictor
 from detectron2.data import MetadataCatalog
 from detectron2.utils.visualizer import Visualizer
 from train import create_config
 
-# Create the parser
-parser = argparse.ArgumentParser(description='Inference using Mask-RCNN.')
-
-# Add the arguments
-parser.add_argument('--input_video', type=str, help='The path to the input video')
-parser.add_argument('--output_video', type=str, help='The path to the output video')
 
 # Parse the arguments
-args = parser.parse_args()
+args = utils.parse_args()
 
-cfg = create_config('coco')
+cfg = create_config(args.dataset_name, args.output_dir)
 
 # Create a predictor
 predictor = DefaultPredictor(cfg)
@@ -47,7 +41,7 @@ while cap.isOpened():
 
     # Filter instances based on a confidence threshold
     instances = outputs["instances"]
-    instances = instances[instances.scores > 0.7]
+    instances = instances[instances.scores > args.threshold]
 
     # Visualize the results
     v = Visualizer(frame[:, :, ::-1], MetadataCatalog.get(cfg.DATASETS.TRAIN[0]), scale=1.2)
